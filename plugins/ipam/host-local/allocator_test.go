@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package hostlocal
 
 import (
+	"net"
+
 	"github.com/containernetworking/cni/pkg/types"
 	fakestore "github.com/containernetworking/cni/plugins/ipam/host-local/backend/testing"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"net"
 )
 
 type AllocatorTestCase struct {

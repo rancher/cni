@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package hostlocal
 
 import (
 	"github.com/containernetworking/cni/plugins/ipam/host-local/backend/disk"
@@ -21,7 +21,7 @@ import (
 	"github.com/containernetworking/cni/pkg/types"
 )
 
-func main() {
+func Main() {
 	skel.PluginMain(cmdAdd, cmdDel)
 }
 
