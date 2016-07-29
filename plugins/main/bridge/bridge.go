@@ -40,6 +40,7 @@ type NetConf struct {
 	IsDefaultGW bool   `json:"isDefaultGateway"`
 	IPMasq      bool   `json:"ipMasq"`
 	MTU         int    `json:"mtu"`
+	LinkMTU     int    `json:"linkMtu"`
 	HairpinMode bool   `json:"hairpinMode"`
 }
 
@@ -201,7 +202,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	defer netns.Close()
 
-	if err = setupVeth(netns, br, args.IfName, n.MTU, n.HairpinMode); err != nil {
+	if err = setupVeth(netns, br, args.IfName, n.LinkMTU, n.HairpinMode); err != nil {
 		return err
 	}
 
