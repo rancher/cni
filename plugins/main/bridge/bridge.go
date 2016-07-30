@@ -35,13 +35,13 @@ const defaultBrName = "cni0"
 
 type NetConf struct {
 	types.NetConf
-	BrName      string `json:"bridge"`
-	IsGW        bool   `json:"isGateway"`
-	IsDefaultGW bool   `json:"isDefaultGateway"`
-	IPMasq      bool   `json:"ipMasq"`
-	MTU         int    `json:"mtu"`
-	LinkMTU     int    `json:"linkMtu"`
-	HairpinMode bool   `json:"hairpinMode"`
+	BrName          string `json:"bridge"`
+	IsGW            bool   `json:"isGateway"`
+	IsDefaultGW     bool   `json:"isDefaultGateway"`
+	IPMasq          bool   `json:"ipMasq"`
+	MTU             int    `json:"mtu"`
+	LinkMTUOverhead int    `json:"linkMTUOverhead"`
+	HairpinMode     bool   `json:"hairpinMode"`
 }
 
 func init() {
@@ -202,7 +202,13 @@ func cmdAdd(args *skel.CmdArgs) error {
 	}
 	defer netns.Close()
 
-	if err = setupVeth(netns, br, args.IfName, n.LinkMTU, n.HairpinMode); err != nil {
+	linkMTU := n.MTU - n.LinkMTUOverhead
+	// If user error, just use the bridge MTU
+	if linkMTU < 0 {
+		linkMTU = n.MTU
+	}
+
+	if err = setupVeth(netns, br, args.IfName, linkMTU, n.HairpinMode); err != nil {
 		return err
 	}
 
