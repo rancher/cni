@@ -174,14 +174,66 @@ func calcGatewayIP(ipn *net.IPNet) net.IP {
 	return ip.NextIP(nid)
 }
 
+func calculateBridgeIP(n *NetConf) (*net.IPNet, error) {
+	var (
+		ip          net.IP
+		bridgeIPNet *net.IPNet
+		err         error
+	)
+
+	if n.BrSubnet == "" {
+		return nil, fmt.Errorf("mandatory bridgeSubnet not specified in config")
+	}
+
+	_, brNetworkIPNet, err := net.ParseCIDR(n.BrSubnet)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid bridgeSubnet specified got error: %v", err)
+	}
+
+	if n.BrIP != "" {
+		ip = net.ParseIP(n.BrIP)
+		if ip == nil {
+			// Check if we can parse as a CIDR
+			ip, _, err = net.ParseCIDR(n.BrIP)
+			if err != nil {
+				return nil, fmt.Errorf("invalid bridgeIP specified in config")
+			}
+		}
+
+		if !brNetworkIPNet.Contains(ip) {
+			return nil, fmt.Errorf("bridgeIP is not in bridgeSubnet")
+		}
+		bridgeIPNet = &net.IPNet{IP: ip, Mask: brNetworkIPNet.Mask}
+	} else {
+		// Use the first IP of the subnet for the bridge
+		brNetworkIPTo4 := brNetworkIPNet.IP.To4()
+
+		ip = net.IPv4(
+			brNetworkIPTo4[0],
+			brNetworkIPTo4[1],
+			brNetworkIPTo4[2],
+			brNetworkIPTo4[3]+1,
+		)
+		bridgeIPNet = &net.IPNet{IP: ip, Mask: brNetworkIPNet.Mask}
+	}
+
+	return bridgeIPNet, nil
+}
+
 func setBridgeIP(n *NetConf) error {
+
+	if n.BrSubnet == "" {
+		return fmt.Errorf("mandatory bridgeSubnet not specified in config")
+	}
+
 	link, err := netlink.LinkByName(n.BrName)
 	if err != nil {
 		return fmt.Errorf("failed to lookup %q: %v", n.BrName, err)
 	}
 
-	if n.BrIP == "" {
-		return fmt.Errorf("bridge_ip not specified in config")
+	bridgeIPNet, err := calculateBridgeIP(n)
+	if err != nil {
+		return fmt.Errorf("failed to calculate bridge IP: %v", err)
 	}
 
 	addrs, err := netlink.AddrList(link, syscall.AF_INET)
@@ -189,17 +241,13 @@ func setBridgeIP(n *NetConf) error {
 		return fmt.Errorf("could not get list of IP addresses: %v", err)
 	}
 	if len(addrs) > 0 {
+		bridgeIPStr := bridgeIPNet.String()
 		for _, a := range addrs {
-			if a.IPNet.String() == n.BrIP {
+			if a.IPNet.String() == bridgeIPStr {
 				// Bridge IP already set, nothing to do
 				return nil
 			}
 		}
-	}
-
-	bridgeIPNet, err := netlink.ParseIPNet(n.BrIP)
-	if err != nil {
-		return fmt.Errorf("failed to parse bridge IP address from config: %v", err)
 	}
 
 	addr := &netlink.Addr{IPNet: bridgeIPNet, Label: ""}
