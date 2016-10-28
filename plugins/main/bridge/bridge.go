@@ -33,9 +33,12 @@ import (
 
 const defaultBrName = "cni0"
 
+// NetConf is used to hold the config of the network
 type NetConf struct {
 	types.NetConf
 	BrName          string `json:"bridge"`
+	BrSubnet        string `json:"bridgeSubnet"`
+	BrIP            string `json:"bridgeIP"`
 	IsGW            bool   `json:"isGateway"`
 	IsDefaultGW     bool   `json:"isDefaultGateway"`
 	IPMasq          bool   `json:"ipMasq"`
@@ -171,11 +174,53 @@ func calcGatewayIP(ipn *net.IPNet) net.IP {
 	return ip.NextIP(nid)
 }
 
+func setBridgeIP(n *NetConf) error {
+	link, err := netlink.LinkByName(n.BrName)
+	if err != nil {
+		return fmt.Errorf("failed to lookup %q: %v", n.BrName, err)
+	}
+
+	if n.BrIP == "" {
+		return fmt.Errorf("bridge_ip not specified in config")
+	}
+
+	addrs, err := netlink.AddrList(link, syscall.AF_INET)
+	if err != nil && err != syscall.ENOENT {
+		return fmt.Errorf("could not get list of IP addresses: %v", err)
+	}
+	if len(addrs) > 0 {
+		for _, a := range addrs {
+			if a.IPNet.String() == n.BrIP {
+				// Bridge IP already set, nothing to do
+				return nil
+			}
+		}
+	}
+
+	bridgeIPNet, err := netlink.ParseIPNet(n.BrIP)
+	if err != nil {
+		return fmt.Errorf("failed to parse bridge IP address from config: %v", err)
+	}
+
+	addr := &netlink.Addr{IPNet: bridgeIPNet, Label: ""}
+	if err = netlink.AddrAdd(link, addr); err != nil {
+		return fmt.Errorf("failed to add IP addr to %q: %v", n.BrName, err)
+	}
+
+	return nil
+}
+
 func setupBridge(n *NetConf) (*netlink.Bridge, error) {
 	// create bridge if necessary
 	br, err := ensureBridge(n.BrName, n.MTU)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bridge %q: %v", n.BrName, err)
+	}
+
+	// Set the bridge IP address
+	err = setBridgeIP(n)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set bridge IP: %v", err)
 	}
 
 	return br, nil
