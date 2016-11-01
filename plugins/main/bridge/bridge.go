@@ -19,7 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os/exec"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/containernetworking/cni/pkg/ip"
@@ -32,6 +34,10 @@ import (
 )
 
 const defaultBrName = "cni0"
+
+const (
+	isolationChainName = "R_NW_ISOLATION"
+)
 
 // NetConf is used to hold the config of the network
 type NetConf struct {
@@ -62,6 +68,47 @@ func loadNetConf(bytes []byte) (*NetConf, error) {
 		return nil, fmt.Errorf("failed to load netconf: %v", err)
 	}
 	return n, nil
+}
+
+func execCmd(cmd *exec.Cmd) error {
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func buildCommand(cmdStr string) *exec.Cmd {
+	cmd := strings.Split(strings.TrimSpace(cmdStr), " ")
+	return exec.Command(cmd[0], cmd[1:]...)
+}
+
+func executeCommand(cmdStr string) error {
+	cmd := buildCommand(cmdStr)
+	return execCmd(cmd)
+}
+
+func createIPTablesChain(n *NetConf) error {
+	newChainCmdStr := fmt.Sprintf("iptables --new-chain %v", isolationChainName)
+	executeCommand(newChainCmdStr)
+
+	r := fmt.Sprintf("iptables --append %v ! -i %v -d %v -j DROP", isolationChainName, n.BrName, n.BrSubnet)
+	executeCommand(r)
+
+	executeCommand(fmt.Sprintf("iptables --insert FORWARD -j %v", isolationChainName))
+
+	return nil
+}
+
+func checkAndCreateRancherNetworkIsolationChain(n *NetConf) error {
+	listChainCmdStr := fmt.Sprintf("iptables -n --list %v", isolationChainName)
+	err := executeCommand(listChainCmdStr)
+	if err != nil {
+		createIPTablesChain(n)
+	}
+
+	return nil
 }
 
 func ensureBridgeAddr(br *netlink.Bridge, ipn *net.IPNet) error {
@@ -269,6 +316,12 @@ func setupBridge(n *NetConf) (*netlink.Bridge, error) {
 	err = setBridgeIP(n)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set bridge IP: %v", err)
+	}
+
+	// Set the isolation the traffic
+	err = checkAndCreateRancherNetworkIsolationChain(n)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup network isolation: %v", err)
 	}
 
 	return br, nil
