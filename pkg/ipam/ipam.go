@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/containernetworking/cni/pkg/invoke"
 	"github.com/containernetworking/cni/pkg/ip"
 	"github.com/containernetworking/cni/pkg/types"
@@ -48,7 +49,11 @@ func ConfigureIface(ifName string, res *types.Result) error {
 	// TODO(eyakubovich): IPv6
 	addr := &netlink.Addr{IPNet: &res.IP4.IP, Label: ""}
 	if err = netlink.AddrAdd(link, addr); err != nil {
-		return fmt.Errorf("failed to add IP addr to %q: %v", ifName, err)
+		if err.Error() == "file exists" {
+			logrus.Infof("Interface %q already has IP address: %v, no worries", ifName, addr)
+		} else {
+			return fmt.Errorf("failed to add IP addr to %q: %v", ifName, err)
+		}
 	}
 
 	for _, r := range res.IP4.Routes {
